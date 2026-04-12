@@ -3,6 +3,7 @@
 <head>
   <title>XZILY AI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <style>
     body {
       font-family: Arial;
@@ -11,6 +12,10 @@
       text-align: center;
       margin: 0;
       padding: 20px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
 
     .box {
@@ -35,6 +40,7 @@
       background: #38bdf8;
       color: black;
       font-weight: bold;
+      cursor: pointer;
     }
 
     #output {
@@ -43,6 +49,14 @@
       padding: 15px;
       border-radius: 10px;
       min-height: 100px;
+      text-align: left;
+      white-space: pre-wrap;
+    }
+
+    footer {
+      margin-top: 30px;
+      font-size: 14px;
+      color: #94a3b8;
     }
   </style>
 </head>
@@ -52,41 +66,72 @@
   <div class="box">
     <h1>🤖 XZILY AI</h1>
 
-    <input id="input" placeholder="Ask XZILY AI...">
+    <input id="input" placeholder="Ask XZILY AI..." />
 
     <br>
 
     <button onclick="send()">Send</button>
 
-    <div id="output"></div>
+    <div id="output">Ask me anything...</div>
   </div>
+
+  <footer>
+    This is an AI and can make mistakes
+  </footer>
 
 <script>
 const API_URL = "https://xzily-ai.onrender.com/chat";
 
 async function send() {
-  let msg = document.getElementById("input").value;
+  const input = document.getElementById("input");
+  const output = document.getElementById("output");
 
-  document.getElementById("output").innerHTML = "Thinking... 🤖";
+  const msg = input.value.trim();
 
-  let res = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messages: [
-        { role: "user", content: msg }
-      ]
-    })
-  });
+  if (!msg) {
+    output.innerHTML = "⚠️ Please type a question first.";
+    return;
+  }
 
-  let data = await res.json();
+  output.innerHTML = "Thinking... 🤖";
 
-  document.getElementById("output").innerHTML =
-    data.choices[0].message.content;
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "user", content: msg }
+        ]
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error("Server error: " + res.status);
+    }
+
+    const data = await res.json();
+
+    // SAFE RESPONSE HANDLING (very important fix)
+    const reply =
+      data?.choices?.[0]?.message?.content ||
+      data?.reply ||
+      data?.response ||
+      "⚠️ No response from AI.";
+
+    output.innerHTML = reply;
+
+  } catch (err) {
+    output.innerHTML =
+      "❌ Error connecting to AI. Check backend or internet.\n\n" +
+      err.message;
+  }
+
+  input.value = "";
 }
 </script>
 
 </body>
-    </html>
+</html>
