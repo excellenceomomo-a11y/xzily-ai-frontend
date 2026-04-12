@@ -1,136 +1,291 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>XZILY AI</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XZILY AI</title>
 
-  <style>
-    body {
-      font-family: Arial;
-      background: #0f172a;
-      color: white;
-      text-align: center;
-      margin: 0;
-      padding: 20px;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: black;
+  color: white;
+  display: flex;
+  height: 100vh;
+}
 
-    .box {
-      max-width: 500px;
-      margin: auto;
-      margin-top: 50px;
-    }
+.sidebar {
+  width: 250px;
+  background: #0a0a0a;
+  padding: 10px;
+  border-right: 1px solid #222;
+  overflow-y: auto;
+}
 
-    input {
-      width: 80%;
-      padding: 10px;
-      border-radius: 10px;
-      border: none;
-      margin-top: 10px;
-    }
+.sidebar button {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #2563eb;
+  border: none;
+  color: white;
+  border-radius: 8px;
+}
 
-    button {
-      padding: 10px 20px;
-      margin-top: 10px;
-      border: none;
-      border-radius: 10px;
-      background: #38bdf8;
-      color: black;
-      font-weight: bold;
-      cursor: pointer;
-    }
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
 
-    #output {
-      margin-top: 20px;
-      background: #1e293b;
-      padding: 15px;
-      border-radius: 10px;
-      min-height: 100px;
-      text-align: left;
-      white-space: pre-wrap;
-    }
+.chat-box {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
 
-    footer {
-      margin-top: 30px;
-      font-size: 14px;
-      color: #94a3b8;
-    }
-  </style>
+.bubble {
+  max-width: 70%;
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 12px;
+}
+
+.user-bubble {
+  background: #2563eb;
+  align-self: flex-end;
+}
+
+.ai-bubble {
+  background: #1f2937;
+  align-self: flex-start;
+}
+
+.input-area {
+  display: flex;
+  padding: 10px;
+  border-top: 1px solid #222;
+}
+
+input {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  background: #111;
+  color: white;
+}
+
+button {
+  margin-left: 5px;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+</style>
 </head>
 
 <body>
 
-  <div class="box">
-    <h1>🤖 XZILY AI</h1>
+<div class="sidebar">
+  <button onclick="createChat()">+ New Chat</button>
+  <button onclick="login()">Login</button>
+  <button onclick="register()">Register</button>
+  <div id="chatList"></div>
+</div>
 
-    <input id="input" placeholder="Ask XZILY AI..." />
+<div class="main">
+  <div id="chatBox" class="chat-box"></div>
 
-    <br>
+  <div class="input-area">
+    <input id="input" placeholder="Message XZILY..." />
 
-    <button onclick="send()">Send</button>
+    <button onclick="send()">➤</button>
+    <button onclick="startVoice()">🎤</button>
+    <button onclick="speakLast()">🔊</button>
 
-    <div id="output">Ask me anything...</div>
+    <input type="file" id="fileInput" onchange="uploadFile(event)" hidden>
+    <button onclick="fileInput.click()">📄</button>
+
+    <input type="file" id="imageInput" accept="image/*" onchange="uploadImage(event)" hidden>
+    <button onclick="imageInput.click()">🖼️</button>
   </div>
-
-  <footer>
-    This is an AI and can make mistakes
-  </footer>
+</div>
 
 <script>
-const API_URL = "https://xzily-ai.onrender.com/chat";
+const API = "https://xzily-ai.onrender.com";
 
+let currentChatId = null;
+
+/* AUTH */
+async function login() {
+  const username = prompt("Username:");
+  const password = prompt("Password:");
+
+  const res = await fetch(API + "/login", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({username,password})
+  });
+
+  const data = await res.json();
+  localStorage.setItem("token", data.token);
+  alert("Logged in!");
+}
+
+async function register() {
+  const username = prompt("Create username:");
+  const password = prompt("Create password:");
+
+  await fetch(API + "/register", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({username,password})
+  });
+
+  alert("Account created!");
+}
+
+/* CHAT UI */
+function addMessage(role, text) {
+  const box = document.getElementById("chatBox");
+  const div = document.createElement("div");
+
+  div.className = "bubble " + (role === "user" ? "user-bubble" : "ai-bubble");
+  box.appendChild(div);
+
+  if (role === "assistant") {
+    let i = 0;
+    const interval = setInterval(() => {
+      div.innerText += text[i];
+      i++;
+      if (i >= text.length) clearInterval(interval);
+      box.scrollTop = box.scrollHeight;
+    }, 15);
+  } else {
+    div.innerText = text;
+  }
+}
+
+/* SEND MESSAGE */
 async function send() {
   const input = document.getElementById("input");
-  const output = document.getElementById("output");
+  const message = input.value.trim();
+  if (!message) return;
 
-  const msg = input.value.trim();
-
-  if (!msg) {
-    output.innerHTML = "⚠️ Please type a question first.";
-    return;
-  }
-
-  output.innerHTML = "Thinking... 🤖";
+  addMessage("user", message);
+  input.value = "";
 
   try {
-    const res = await fetch(API_URL, {
+    const res = await fetch(API + "/chat", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type":"application/json",
+        "Authorization": localStorage.getItem("token")
       },
-      body: JSON.stringify({
-        messages: [
-          { role: "user", content: msg }
-        ]
-      })
+      body: JSON.stringify({ message, chatId: currentChatId })
     });
 
-    if (!res.ok) {
-      throw new Error("Server error: " + res.status);
-    }
-
     const data = await res.json();
+    currentChatId = data.chatId;
 
-    // SAFE RESPONSE HANDLING (very important fix)
-    const reply =
-      data?.choices?.[0]?.message?.content ||
-      data?.reply ||
-      data?.response ||
-      "⚠️ No response from AI.";
+    addMessage("assistant", data.reply);
 
-    output.innerHTML = reply;
-
-  } catch (err) {
-    output.innerHTML =
-      "❌ Error connecting to AI. Check backend or internet.\n\n" +
-      err.message;
+  } catch {
+    addMessage("assistant", "Error connecting to server.");
   }
-
-  input.value = "";
 }
+
+/* FILE UPLOAD */
+async function uploadFile(e) {
+  const file = e.target.files[0];
+  const formData = new FormData();
+  formData.append("file", file);
+
+  addMessage("user", "📄 " + file.name);
+  addMessage("assistant", "Reading file...");
+
+  const res = await fetch(API + "/upload", {
+    method: "POST",
+    headers: {"Authorization": localStorage.getItem("token")},
+    body: formData
+  });
+
+  const data = await res.json();
+  addMessage("assistant", data.reply);
+}
+
+/* IMAGE */
+async function uploadImage(e) {
+  const file = e.target.files[0];
+  const formData = new FormData();
+  formData.append("image", file);
+
+  addMessage("user", "🖼️ " + file.name);
+  addMessage("assistant", "Analyzing image...");
+
+  const res = await fetch(API + "/upload-image", {
+    method: "POST",
+    headers: {"Authorization": localStorage.getItem("token")},
+    body: formData
+  });
+
+  const data = await res.json();
+  addMessage("assistant", data.reply);
+}
+
+/* VOICE */
+function startVoice() {
+  const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+  rec.onresult = e => document.getElementById("input").value = e.results[0][0].transcript;
+  rec.start();
+}
+
+function speakLast() {
+  const last = document.querySelectorAll(".ai-bubble");
+  if (!last.length) return;
+  speechSynthesis.speak(new SpeechSynthesisUtterance(last[last.length-1].innerText));
+}
+
+/* CHAT LIST */
+async function loadChats() {
+  const res = await fetch(API + "/chats", {
+    headers: {"Authorization": localStorage.getItem("token")}
+  });
+
+  const chats = await res.json();
+  const list = document.getElementById("chatList");
+  list.innerHTML = "";
+
+  chats.forEach(chat => {
+    const div = document.createElement("div");
+    div.innerText = chat.title || "Chat";
+    div.onclick = () => loadChat(chat);
+    list.appendChild(div);
+  });
+}
+
+function loadChat(chat) {
+  currentChatId = chat._id;
+  const box = document.getElementById("chatBox");
+  box.innerHTML = "";
+
+  chat.messages.forEach(m => addMessage(
+    m.role === "user" ? "user" : "assistant",
+    m.content
+  ));
+}
+
+function createChat() {
+  currentChatId = null;
+  document.getElementById("chatBox").innerHTML = "";
+}
+
+loadChats();
 </script>
 
 </body>
