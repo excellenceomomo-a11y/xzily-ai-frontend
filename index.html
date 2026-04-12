@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>XZILY AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .box {
+      max-width: 500px;
+      margin: auto;
+      margin-top: 50px;
+    }
+
+    input {
+      width: 80%;
+      padding: 10px;
+      border-radius: 10px;
+      border: none;
+      margin-top: 10px;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin-top: 10px;
+      border: none;
+      border-radius: 10px;
+      background: #38bdf8;
+      color: black;
+      font-weight: bold;
+    }
+
+    #output {
+      margin-top: 20px;
+      background: #1e293b;
+      padding: 15px;
+      border-radius: 10px;
+      min-height: 100px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="box">
+    <h1>🤖 XZILY AI</h1>
+
+    <input id="input" placeholder="Ask XZILY AI...">
+
+    <br>
+
+    <button onclick="send()">Send</button>
+
+    <div id="output"></div>
+  </div>
+
+<script>
+const API_URL = "https://xzily-ai.onrender.com/chat";
+
+async function send() {
+  let msg = document.getElementById("input").value;
+
+  document.getElementById("output").innerHTML = "Thinking... 🤖";
+
+  let res = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messages: [
+        { role: "user", content: msg }
+      ]
+    })
+  });
+
+  let data = await res.json();
+
+  document.getElementById("output").innerHTML =
+    data.choices[0].message.content;
+}
+</script>
+
+</body>
+    </html>
