@@ -1330,4 +1330,267 @@ async function uploadImage(file, extraMsg) {
   appendMessage('user', `<img src="${objUrl}" style="max-width:200px;max-height:200px;border-radius:8px;display:block;margin-bottom:4px;" />${extraMsg ? escapeHtml(extraMsg) : ''}`, true);
   hideWelcome();
 
-  if (!token) { appendMessage('ai', '⚠️ Please sign in to use image ana
+    if (!token) { appendMessage('ai', '⚠️ Please sign in to use image analysis.'); return; }
+
+  const typingId = appendTyping();
+  document.getElementById('send-btn').disabled = true;
+
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    if (extraMsg) formData.append('message', extraMsg);
+    if (currentChatId) formData.append('chatId', currentChatId);
+
+    const res  = await fetch(`${BASE_URL}/upload-image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData
+    });
+    const data = await res.json();
+
+    removeTyping(typingId);
+    if (!res.ok) throw new Error(data.error || 'Image upload failed');
+
+    currentChatId = data.chatId;
+    appendMessage('ai', data.reply);
+    if (ttsEnabled) speakText(data.reply);
+    loadChatHistory();
+  } catch (e) {
+    removeTyping(typingId);
+    appendMessage('ai', '⚠️ Error: ' + e.message);
+  } finally {
+    document.getElementById('send-btn').disabled = false;
+  }
+}
+
+// ─────────────────────────────────────────────────
+// DOM HELPERS
+// ─────────────────────────────────────────────────
+let typingCounter = 0;
+
+function appendMessage(role, content, rawHtml = false) {
+  const inner  = document.getElementById('messages-inner');
+  const row    = document.createElement('div');
+  row.className = 'msg-row ' + role;
+
+  const avatar = role === 'ai' ? 'X' : (currentUser ? currentUser[0].toUpperCase() : 'U');
+  const formattedContent = rawHtml ? content : formatContent(content);
+
+  row.innerHTML = `
+    <div class="msg-avatar">${avatar}</div>
+    <div class="msg-bubble">${formattedContent}</div>
+  `;
+  inner.appendChild(row);
+  scrollToBottom();
+  return row;
+}
+
+function appendTyping() {
+  const id    = 'typing-' + (++typingCounter);
+  const inner = document.getElementById('messages-inner');
+  const row   = document.createElement('div');
+  row.className = 'msg-row ai';
+  row.id = id;
+  row.innerHTML = `
+    <div class="msg-avatar">X</div>
+    <div class="msg-bubble">
+      <div class="typing-dot"><span></span><span></span><span></span></div>
+    </div>
+  `;
+  inner.appendChild(row);
+  scrollToBottom();
+  return id;
+}
+
+function removeTyping(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function formatContent(text) {
+  // Basic markdown-lite formatting
+  let html = escapeHtml(text);
+  // Code blocks
+  html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function clearChat(showWelcome = true) {
+  document.getElementById('messages-inner').innerHTML = '';
+  if (showWelcome) {
+    document.getElementById('welcome').style.display = 'flex';
+  }
+}
+
+function hideWelcome() {
+  document.getElementById('welcome').style.display = 'none';
+}
+
+function scrollToBottom() {
+  const msgs = document.getElementById('messages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function updateSendBtn() {
+  const input  = document.getElementById('user-input');
+  const hasText = input.value.trim().length > 0;
+  document.getElementById('send-btn').disabled = !hasText && !pendingFile;
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+}
+
+function handleKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function fillInput(text) {
+  const input = document.getElementById('user-input');
+  input.value = text;
+  input.focus();
+  autoResize(input);
+  updateSendBtn();
+}
+
+// ─────────────────────────────────────────────────
+// VOICE INPUT
+// ─────────────────────────────────────────────────
+function toggleVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Voice input not supported in this browser.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('voice-btn');
+
+  if (isListening) {
+    recognition && recognition.stop();
+    isListening = false;
+    btn.classList.remove('active');
+    return;
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+
+  recognition.onstart = () => {
+    isListening = true;
+    btn.classList.add('active');
+    showToast('Listening…');
+  };
+
+  recognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    const input = document.getElementById('user-input');
+    input.value = (input.value + ' ' + transcript).trim();
+    autoResize(input);
+    updateSendBtn();
+  };
+
+  recognition.onerror = () => showToast('Voice error. Try again.', 'error');
+
+  recognition.onend = () => {
+    isListening = false;
+    btn.classList.remove('active');
+  };
+
+  recognition.start();
+}
+
+// ─────────────────────────────────────────────────
+// VOICE OUTPUT (TTS)
+// ─────────────────────────────────────────────────
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  const btn = document.getElementById('tts-btn');
+  btn.classList.toggle('active', ttsEnabled);
+  showToast(ttsEnabled ? 'Voice output on' : 'Voice output off');
+}
+
+function speakText(text) {
+  if (!('speechSynthesis' in window)) return;
+  const plain = text.replace(/<[^>]+>/g, '').replace(/```[\s\S]*?```/g, '');
+  const utter = new SpeechSynthesisUtterance(plain.substring(0, 500));
+  utter.rate = 1; utter.pitch = 1;
+  speechSynthesis.speak(utter);
+}
+
+// ─────────────────────────────────────────────────
+// MODAL
+// ─────────────────────────────────────────────────
+function openModal(type) {
+  document.getElementById('modal-overlay').classList.add('open');
+  switchModal(type);
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function switchModal(type) {
+  document.getElementById('login-form').style.display    = type === 'login'    ? 'block' : 'none';
+  document.getElementById('register-form').style.display = type === 'register' ? 'block' : 'none';
+  document.getElementById('login-error').style.display    = 'none';
+  document.getElementById('register-error').style.display = 'none';
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+// ─────────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+function showError(el, msg) {
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+// ─────────────────────────────────────────────────
+// SIDEBAR (MOBILE)
+// ─────────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').style.display =
+    document.getElementById('sidebar').classList.contains('open') ? 'block' : 'none';
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').style.display = 'none';
+}
+</script>
+</body>
+</html>
