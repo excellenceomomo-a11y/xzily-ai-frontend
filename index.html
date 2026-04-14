@@ -611,3 +611,203 @@ function enableSearchAndAsk(text) {
   fillInput(text);
 }
 </script>
+<script>
+// ─── FILE UPLOAD ──────────────────────────────────
+function triggerFileUpload()  { document.getElementById('file-input').click(); }
+function triggerImageUpload() { document.getElementById('image-input').click(); }
+
+function handleFileSelect(e) {
+  const file = e.target.files[0]; if (!file) return;
+  pendingFile = { type:'file', file };
+  showFileChip(file.name, 'file'); updateSendBtn(); e.target.value = '';
+}
+function handleImageSelect(e) {
+  const file = e.target.files[0]; if (!file) return;
+  pendingFile = { type:'image', file };
+  showFileChip(file.name, 'image'); updateSendBtn(); e.target.value = '';
+}
+function showFileChip(name, type) {
+  document.getElementById('file-preview').innerHTML =
+    '<div class="file-chip"><span>' + (type==='image'?'&#x1F5BC;':'&#x1F4C4;') + '</span><span>' + escapeHtml(name) + '</span><span class="file-chip-remove" onclick="removePendingFile()">&#x2715;</span></div>';
+}
+function removePendingFile() { pendingFile = null; clearFilePreview(); updateSendBtn(); }
+function clearFilePreview()  { document.getElementById('file-preview').innerHTML = ''; }
+
+async function uploadFile(file, extraMsg) {
+  appendMessage('user', '&#x1F4C4; ' + file.name + (extraMsg ? ' - ' + extraMsg : ''));
+  hideWelcome();
+  if (!token) { appendMessage('ai', 'Please sign in to use file analysis.'); return; }
+  const typingId = appendTyping();
+  document.getElementById('send-btn').disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (extraMsg)      formData.append('message', extraMsg);
+    if (currentChatId) formData.append('chatId', currentChatId);
+    formData.append('model', getSelectedModel());
+    const res  = await fetch(BASE_URL + '/upload', { method:'POST', headers:{ Authorization:'Bearer ' + token }, body: formData });
+    const data = await res.json();
+    removeTyping(typingId);
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    currentChatId = data.chatId;
+    appendMessage('ai', data.reply);
+    if (ttsEnabled) speakText(data.reply);
+    loadChatHistory();
+  } catch(e) { removeTyping(typingId); appendMessage('ai', 'Error: ' + e.message); }
+  finally { document.getElementById('send-btn').disabled = false; }
+}
+
+async function uploadImage(file, extraMsg) {
+  const objUrl = URL.createObjectURL(file);
+  appendMessage('user', '<img src="' + objUrl + '" style="max-width:200px;max-height:200px;border-radius:8px;display:block;margin-bottom:4px;">' + (extraMsg ? escapeHtml(extraMsg) : ''), { rawHtml:true });
+  hideWelcome();
+  if (!token) { appendMessage('ai', 'Please sign in to use image analysis.'); return; }
+  const typingId = appendTyping();
+  document.getElementById('send-btn').disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    if (extraMsg)      formData.append('message', extraMsg);
+    if (currentChatId) formData.append('chatId', currentChatId);
+    formData.append('model', getSelectedModel());
+    const res  = await fetch(BASE_URL + '/upload-image', { method:'POST', headers:{ Authorization:'Bearer ' + token }, body: formData });
+    const data = await res.json();
+    removeTyping(typingId);
+    if (!res.ok) throw new Error(data.error || 'Image upload failed');
+    currentChatId = data.chatId;
+    appendMessage('ai', data.reply);
+    if (ttsEnabled) speakText(data.reply);
+    loadChatHistory();
+  } catch(e) { removeTyping(typingId); appendMessage('ai', 'Error: ' + e.message); }
+  finally { document.getElementById('send-btn').disabled = false; }
+}
+
+// ─── DOM HELPERS ──────────────────────────────────
+let typingCounter = 0;
+
+function appendMessage(role, content, opts = {}) {
+  const inner = document.getElementById('messages-inner');
+  const row   = document.createElement('div');
+  row.className = 'msg-row ' + role;
+  const avatar    = role === 'ai' ? 'X' : (currentUser ? currentUser[0].toUpperCase() : 'U');
+  const formatted = opts.rawHtml ? content : formatContent(content);
+  let sourcesHtml = '';
+  if (opts.sources && opts.sources.length) {
+    sourcesHtml = '<div class="search-results"><div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">&#x1F310; Web sources</div>' +
+      opts.sources.map(s => '<div class="search-result-item">&#xB7; <a href="' + escapeHtml(s.url) + '" target="_blank" rel="noopener">' + escapeHtml(s.title || s.url) + '</a></div>').join('') +
+      '</div>';
+  }
+  row.innerHTML = '<div class="msg-avatar">' + avatar + '</div><div class="msg-bubble">' + formatted + sourcesHtml + '</div>';
+  inner.appendChild(row);
+  scrollToBottom();
+  return row;
+}
+
+function appendTyping() {
+  const id    = 'typing-' + (++typingCounter);
+  const inner = document.getElementById('messages-inner');
+  const row   = document.createElement('div');
+  row.className = 'msg-row ai'; row.id = id;
+  row.innerHTML = '<div class="msg-avatar">X</div><div class="msg-bubble"><div class="typing-dot"><span></span><span></span><span></span></div></div>';
+  inner.appendChild(row); scrollToBottom(); return id;
+}
+function removeTyping(id) { const el = document.getElementById(id); if (el) el.remove(); }
+
+function formatContent(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/```([sS]*?)```/g, '<pre><code>$1</code></pre>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/**(.+?)**/g, '<strong>$1</strong>');
+  html = html.replace(/*(.+?)*/g, '<em>$1</em>');
+  html = html.replace(/
+/g, '<br>');
+  return html;
+}
+function escapeHtml(t) {
+  return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function clearChat(showWelcome = true) {
+  document.getElementById('messages-inner').innerHTML = '';
+  if (showWelcome) document.getElementById('welcome').style.display = 'flex';
+}
+function hideWelcome()   { document.getElementById('welcome').style.display = 'none'; }
+function scrollToBottom(){ const m = document.getElementById('messages'); m.scrollTop = m.scrollHeight; }
+function updateSendBtn() {
+  const input = document.getElementById('user-input');
+  document.getElementById('send-btn').disabled = !input.value.trim() && !pendingFile;
+}
+function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight,200)+'px'; }
+function handleKeydown(e) { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+function fillInput(text) {
+  const input = document.getElementById('user-input');
+  input.value = text; input.focus(); autoResize(input); updateSendBtn();
+}
+
+// ─── VOICE INPUT ──────────────────────────────────
+function toggleVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Voice input not supported in this browser.', 'error'); return;
+  }
+  const btn = document.getElementById('voice-btn');
+  if (isListening) { recognition && recognition.stop(); isListening = false; btn.classList.remove('active'); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'en-US'; recognition.interimResults = false;
+  recognition.onstart  = () => { isListening = true; btn.classList.add('active'); showToast('Listening...'); };
+  recognition.onresult = e  => {
+    const t     = e.results[0][0].transcript;
+    const input = document.getElementById('user-input');
+    input.value = (input.value + ' ' + t).trim(); autoResize(input); updateSendBtn();
+  };
+  recognition.onerror = () => showToast('Voice error. Try again.', 'error');
+  recognition.onend   = () => { isListening = false; btn.classList.remove('active'); };
+  recognition.start();
+}
+
+// ─── VOICE OUTPUT ─────────────────────────────────
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  document.getElementById('tts-btn').classList.toggle('active', ttsEnabled);
+  showToast(ttsEnabled ? 'Voice output on' : 'Voice output off');
+}
+function speakText(text) {
+  if (!('speechSynthesis' in window)) return;
+  const plain = text.replace(/<[^>]+>/g,'').replace(/```[sS]*?```/g,'');
+  const u = new SpeechSynthesisUtterance(plain.substring(0,500));
+  u.rate = 1; u.pitch = 1; speechSynthesis.speak(u);
+}
+
+// ─── MODAL ────────────────────────────────────────
+function openModal(type)  { document.getElementById('modal-overlay').classList.add('open'); switchModal(type); }
+function closeModal()     { document.getElementById('modal-overlay').classList.remove('open'); }
+function switchModal(type) {
+  document.getElementById('login-form').style.display    = type==='login'    ? 'block' : 'none';
+  document.getElementById('register-form').style.display = type==='register' ? 'block' : 'none';
+  document.getElementById('login-error').style.display    = 'none';
+  document.getElementById('register-error').style.display = 'none';
+}
+function handleOverlayClick(e) { if (e.target===document.getElementById('modal-overlay')) closeModal(); }
+
+// ─── TOAST ────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3500);
+}
+function showError(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+
+// ─── SIDEBAR MOBILE ───────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').style.display =
+    document.getElementById('sidebar').classList.contains('open') ? 'block' : 'none';
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').style.display = 'none';
+}
+</script>
+</body>
+</html>
