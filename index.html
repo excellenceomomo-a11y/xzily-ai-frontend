@@ -186,7 +186,10 @@
     @media(max-width:768px){
       #sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);z-index: 100;}
       #sidebar.open{transform:translateX(0);}
-      ##sidebar-overlay {display: none;pointer-events: none; /* 🔥 THIS FIXES CLICK BLOCKING */}
+      #sidebar-overlay { 
+  display: none; 
+  pointer-events: none;
+      }
       #hamburger{display:flex;}
       .welcome-title{font-size:26px;}
       #input-area{padding:12px 16px 20px;}
@@ -610,13 +613,6 @@ function enableSearchAndAsk(text) {
   document.getElementById('web-search-toggle').checked = true;
   fillInput(text);
 }
-  function formatContent(text) { return text; }
-function appendTyping() { return 0; }
-function removeTyping() {}
-function hideWelcome() {
-  const w = document.getElementById("welcome");
-  if (w) w.style.display = "none";
-  }
 </script>
 <script>
 // ─── FILE UPLOAD ──────────────────────────────────
@@ -726,14 +722,17 @@ function removeTyping(id) { const el = document.getElementById(id); if (el) el.r
 
 function formatContent(text) {
   let html = escapeHtml(text);
-  html = html.replace(/```([sS]*?)```/g, '<pre><code>$1</code></pre>');
+
+  html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/**(.+?)**/g, '<strong>$1</strong>');
-  html = html.replace(/*(.+?)*/g, '<em>$1</em>');
-  html = html.replace(/
-/g, '<br>');
+
+  // ✅ FIXED
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  html = html.replace(/\n/g, '<br>');
   return html;
-}
+  }
 function escapeHtml(t) {
   return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
