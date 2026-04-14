@@ -792,6 +792,10 @@
     }
   </style>
 </head>
+  <input type="file" id="imgFile" />
+<button onclick="sendImage()">Send Image</button>
+
+<pre id="output"></pre>
 <body>
 
 <div id="app">
@@ -1361,6 +1365,32 @@ async function uploadImage(file, extraMsg) {
   } finally {
     document.getElementById('send-btn').disabled = false;
   }
+  async function uploadImage(file, message = "") {
+  const formData = new FormData();
+
+  formData.append("image", file); // MUST be "image"
+  formData.append("message", message);
+
+  const res = await fetch("https://xzily-ai-backend-8.onrender.com/upload-image", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + localStorage.getItem("token")
+      // DO NOT add Content-Type
+    },
+    body: formData
+  });
+
+  return await res.json();
+  }async function sendImage() {
+  const file = document.getElementById("imgFile").files[0];
+
+  if (!file) return alert("Select an image first");
+
+  const res = await uploadImage(file, "Analyze this image");
+
+  document.getElementById("output").innerText =
+    res.reply || res.error;
+      }
 }
 
 // ─────────────────────────────────────────────────
