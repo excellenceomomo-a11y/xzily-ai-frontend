@@ -610,6 +610,13 @@ function enableSearchAndAsk(text) {
   document.getElementById('web-search-toggle').checked = true;
   fillInput(text);
 }
+  function formatContent(text) { return text; }
+function appendTyping() { return 0; }
+function removeTyping() {}
+function hideWelcome() {
+  const w = document.getElementById("welcome");
+  if (w) w.style.display = "none";
+  }
 </script>
 <script>
 // ─── FILE UPLOAD ──────────────────────────────────
