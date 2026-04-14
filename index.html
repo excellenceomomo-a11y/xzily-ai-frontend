@@ -1153,7 +1153,6 @@ async function loadChat(chatId) {
 
   // Mark active
   document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
-  event.currentTarget.classList.add('active');
 
   // Fetch messages from server
   try {
