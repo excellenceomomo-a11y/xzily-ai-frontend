@@ -901,6 +901,10 @@
       </div>
       <div class="messages-inner" id="messages-inner"></div>
     </div>
+    <div style="position: fixed; bottom: 10px; width: 100%;">
+  <input type="text" id="input" style="width: 70%;" />
+  <button onclick="sendMessage()">Send</button>
+    </div>
 
     <!-- Input Area -->
     <div id="input-area">
@@ -1191,7 +1195,28 @@ function startNewChat() {
 // MESSAGING
 // ─────────────────────────────────────────────────
 async function sendMessage() {
-  const input = document.getElementById('user-input');
+  const userInput = document.getElementById("input").value;
+
+  const res = await fetch("https://xzily-ai-backend-8.onrender.com/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      userId: "user123",
+      messages: [
+        { role: "user", content: userInput }
+      ]
+    })
+  });
+
+  const data = await res.json();
+
+  document.getElementById("chat").innerHTML += `
+    <p><b>You:</b> ${userInput}</p>
+    <p><b>AI:</b> ${data.reply}</p>
+  `;
+  }
   const text  = input.value.trim();
   if (!text && !pendingFile) return;
 
