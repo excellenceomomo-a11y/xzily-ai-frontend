@@ -1429,7 +1429,7 @@ async function uploadImage(file, extraMsg) {
   const res = await fetch("https://xzily-ai-backend-8.onrender.com/upload-image", {
     method: "POST",
     headers: {
-      "Authorization": "Bearer " + localStorage.getItem("token")
+      "Authorization": "Bearer " + localStorage.getItem("xzily_token")
       // DO NOT add Content-Type
     },
     body: formData
