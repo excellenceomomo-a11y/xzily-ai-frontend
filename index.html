@@ -390,3 +390,224 @@
 </div>
 
 <div id="toast"></div>
+<script>
+// ─── CONFIG ───────────────────────────────────────
+const BASE_URL = 'https://xzily-ai-backend-8.onrender.com'; // ← your Render URL
+
+// ─── STATE ────────────────────────────────────────
+let token         = localStorage.getItem('xzily_token') || null;
+let currentUser   = localStorage.getItem('xzily_user')  || null;
+let currentChatId = null;
+let isListening   = false;
+let ttsEnabled    = false;
+let recognition   = null;
+let pendingFile   = null;
+let greetingShown = false;
+
+// ─── INIT ─────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  restoreSession();
+  updateSendBtn();
+  document.getElementById('user-input').addEventListener('input', updateSendBtn);
+  // Ping backend every 12 minutes to prevent Render spin-down
+  setInterval(() => {
+    fetch(BASE_URL + '/health').catch(() => {});
+  }, 12 * 60 * 1000);
+});
+
+function getTimeGreeting() {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 12) return 'Good morning';
+  if (h >= 12 && h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function showGreeting(username) {
+  if (greetingShown) return;
+  greetingShown = true;
+  const banner = document.getElementById('greeting-banner');
+  banner.textContent = 'Hey ' + username + ', ' + getTimeGreeting() + '! Welcome back.';
+  banner.style.display = 'block';
+  setTimeout(() => { banner.style.display = 'none'; }, 5000);
+}
+
+function restoreSession() {
+  if (token && currentUser) {
+    showLoggedIn(currentUser);
+    loadChatHistory();
+    showGreeting(currentUser);
+  }
+}
+
+function getSelectedModel() { return document.getElementById('model-select').value; }
+function isWebSearchEnabled() { return document.getElementById('web-search-toggle').checked; }
+
+// ─── AUTH ──────────────────────────────────────────
+async function login() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('login-error');
+  const btn      = document.getElementById('login-submit');
+  if (!username || !password) { showError(errEl, 'Please fill all fields.'); return; }
+  btn.disabled = true; btn.textContent = 'Signing in...';
+  try {
+    const res  = await fetch(BASE_URL + '/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password}) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    token = data.token; currentUser = username;
+    localStorage.setItem('xzily_token', token);
+    localStorage.setItem('xzily_user', username);
+    closeModal();
+    showLoggedIn(username);
+    loadChatHistory();
+    showGreeting(username);
+    showToast('Welcome back, ' + username + '!', 'success');
+  } catch(e) { showError(errEl, e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Sign In'; }
+}
+
+async function register() {
+  const username = document.getElementById('reg-username').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const errEl    = document.getElementById('register-error');
+  const btn      = document.getElementById('register-submit');
+  if (!username || !password) { showError(errEl, 'Please fill all fields.'); return; }
+  if (password.length < 6)   { showError(errEl, 'Password must be at least 6 characters.'); return; }
+  btn.disabled = true; btn.textContent = 'Creating...';
+  try {
+    const res  = await fetch(BASE_URL + '/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password}) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Registration failed');
+    showToast('Account created! Please sign in.', 'success');
+    switchModal('login');
+    document.getElementById('login-username').value = username;
+  } catch(e) { showError(errEl, e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Create Account'; }
+}
+
+function logout() {
+  token = null; currentUser = null; currentChatId = null; greetingShown = false;
+  localStorage.removeItem('xzily_token');
+  localStorage.removeItem('xzily_user');
+  document.getElementById('user-info').style.display   = 'none';
+  document.getElementById('auth-buttons').style.display = 'flex';
+  document.getElementById('chat-history').innerHTML    = '';
+  clearChat();
+  showToast('Signed out successfully.');
+}
+
+function showLoggedIn(username) {
+  document.getElementById('auth-buttons').style.display = 'none';
+  document.getElementById('user-info').style.display    = 'flex';
+  document.getElementById('user-name-display').textContent = username;
+  document.getElementById('user-avatar').textContent       = username[0].toUpperCase();
+}
+
+// ─── CHAT HISTORY ─────────────────────────────────
+async function loadChatHistory() {
+  if (!token) return;
+  try {
+    const res  = await fetch(BASE_URL + '/chats', { headers:{ Authorization:'Bearer ' + token } });
+    const data = await res.json();
+    renderChatHistory(data.chats || []);
+  } catch(e) { console.error('Load history error:', e); }
+}
+
+function renderChatHistory(chats) {
+  const container = document.getElementById('chat-history');
+  container.innerHTML = '';
+  if (!chats.length) {
+    container.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--text-dim)">No chats yet</div>';
+    return;
+  }
+  chats.forEach(chat => {
+    const el = document.createElement('div');
+    el.className = 'chat-item' + (chat._id === currentChatId ? ' active' : '');
+    el.innerHTML = '<span class="chat-item-icon">&#x1F4AC;</span><span class="chat-item-title">' + escapeHtml(chat.title || 'New Chat') + '</span>';
+    el.onclick = () => loadChat(chat._id, el);
+    container.appendChild(el);
+  });
+}
+
+async function loadChat(chatId, el) {
+  if (!token) { openModal('login'); return; }
+  currentChatId = chatId;
+  document.querySelectorAll('.chat-item').forEach(e => e.classList.remove('active'));
+  if (el) el.classList.add('active');
+  try {
+    const res  = await fetch(BASE_URL + '/chats', { headers:{ Authorization:'Bearer ' + token } });
+    const data = await res.json();
+    const chat = (data.chats || []).find(c => c._id === chatId);
+    if (!chat) return;
+    clearChat(false);
+    document.getElementById('welcome').style.display = 'none';
+    document.getElementById('chat-title').textContent = chat.title || 'Chat';
+    (chat.messages || []).forEach(msg => appendMessage(msg.role === 'user' ? 'user' : 'ai', msg.content));
+    scrollToBottom();
+  } catch(e) { console.error(e); }
+}
+
+function startNewChat() {
+  currentChatId = null;
+  clearChat();
+  document.getElementById('chat-title').textContent = 'XZILY AI';
+  document.querySelectorAll('.chat-item').forEach(e => e.classList.remove('active'));
+  closeSidebar();
+}
+
+// ─── SEND MESSAGE ─────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('user-input');
+  const text  = input.value.trim();
+  if (!text && !pendingFile) return;
+
+  if (pendingFile) {
+    const saved = pendingFile; pendingFile = null; clearFilePreview();
+    if (saved.type === 'image') await uploadImage(saved.file, text);
+    else                        await uploadFile(saved.file, text);
+    input.value = ''; autoResize(input); updateSendBtn();
+    return;
+  }
+
+  input.value = ''; autoResize(input); updateSendBtn();
+
+  if (!token) {
+    appendMessage('user', text);
+    appendMessage('ai', 'Please sign in to start chatting with XZILY AI.');
+    return;
+  }
+
+  appendMessage('user', text);
+  hideWelcome();
+
+  const typingId = appendTyping();
+  document.getElementById('send-btn').disabled = true;
+
+  try {
+    const model     = getSelectedModel();
+    const webSearch = isWebSearchEnabled();
+    const res  = await fetch(BASE_URL + '/chat', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', Authorization:'Bearer ' + token },
+      body: JSON.stringify({ message: text, chatId: currentChatId, model, webSearch })
+    });
+    const data = await res.json();
+    removeTyping(typingId);
+    if (!res.ok) throw new Error(data.error || 'Chat failed');
+    currentChatId = data.chatId;
+    appendMessage('ai', data.reply, { sources: data.sources });
+    if (ttsEnabled) speakText(data.reply);
+    loadChatHistory();
+  } catch(e) {
+    removeTyping(typingId);
+    appendMessage('ai', 'Sorry, something went wrong: ' + e.message);
+  } finally {
+    document.getElementById('send-btn').disabled = false;
+  }
+}
+
+function enableSearchAndAsk(text) {
+  document.getElementById('web-search-toggle').checked = true;
+  fillInput(text);
+}
+</script>
