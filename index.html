@@ -792,12 +792,7 @@
     }
   </style>
 </head>
-  <input type="file" id="imgFile" />
-<button onclick="sendImage()">Send Image</button>
-
-<pre id="output"></pre>
-<body>
-
+  
 <div id="app">
 
   <!-- ═══ SIDEBAR ═══ -->
@@ -900,10 +895,6 @@
         </div>
       </div>
       <div class="messages-inner" id="messages-inner"></div>
-    </div>
-    <div style="position: fixed; bottom: 10px; width: 100%;">
-  <input type="text" id="input" style="width: 70%;" />
-  <button onclick="sendMessage()">Send</button>
     </div>
 
     <!-- Input Area -->
@@ -1013,6 +1004,7 @@ const BASE_URL = 'https://xzily-ai-backend-8.onrender.com';
 // STATE
 // ─────────────────────────────────────────────────
 let token        = localStorage.getItem('xzily_token') || null;
+const input = document.getElementById('user-input');
 let currentUser  = localStorage.getItem('xzily_user')  || null;
 let currentChatId= null;
 let isListening  = false;
@@ -1195,27 +1187,66 @@ function startNewChat() {
 // MESSAGING
 // ─────────────────────────────────────────────────
 async function sendMessage() {
-  const userInput = document.getElementById("input").value;
+  const input = document.getElementById('user-input');
+  const text = input.value.trim();
 
-  const res = await fetch("https://xzily-ai-backend-8.onrender.com/chat", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      userId: "user123",
-      messages: [
-        { role: "user", content: userInput }
-      ]
-    })
-  });
+  if (!text && !pendingFile) return;
 
-  const data = await res.json();
+  // Handle file/image first
+  if (pendingFile) {
+    const saved = pendingFile;
+    pendingFile = null;
+    clearFilePreview();
 
-  document.getElementById("chat").innerHTML += `
-    <p><b>You:</b> ${userInput}</p>
-    <p><b>AI:</b> ${data.reply}</p>
-  `;
+    if (saved.type === 'image') {
+      await uploadImage(saved.file, text);
+    } else {
+      await uploadFile(saved.file, text);
+    }
+
+    input.value = '';
+    autoResize(input);
+    updateSendBtn();
+    return;
+  }
+
+  input.value = '';
+  autoResize(input);
+  updateSendBtn();
+
+  appendMessage('user', text);
+  hideWelcome();
+
+  const typingId = appendTyping();
+
+  try {
+    const res = await fetch(`${BASE_URL}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        message: text,
+        chatId: currentChatId
+      })
+    });
+
+    const data = await res.json();
+    removeTyping(typingId);
+
+    if (!res.ok) throw new Error(data.error || "Chat failed");
+
+    currentChatId = data.chatId;
+    appendMessage('ai', data.reply);
+
+    if (ttsEnabled) speakText(data.reply);
+    loadChatHistory();
+
+  } catch (err) {
+    removeTyping(typingId);
+    appendMessage('ai', '⚠️ ' + err.message);
+  }
   }
   const text  = input.value.trim();
   if (!text && !pendingFile) return;
@@ -1390,7 +1421,6 @@ async function uploadImage(file, extraMsg) {
   } finally {
     document.getElementById('send-btn').disabled = false;
   }
-  async function uploadImage(file, message = "") {
   const formData = new FormData();
 
   formData.append("image", file); // MUST be "image"
