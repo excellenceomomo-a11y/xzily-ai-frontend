@@ -335,7 +335,7 @@
                 <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
               </button>
             </div>
-            <button id="send-btn" onclick="sendMessage()" disabled>
+            <button id="send-btn" onclick="sendMessage()">
               <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5m-7 7l7-7 7 7"/></svg>
             </button>
           </div>
@@ -700,9 +700,13 @@ function appendMessage(role, content, opts = {}) {
   const formatted = opts.rawHtml ? content : formatContent(content);
   let sourcesHtml = '';
   if (opts.sources && opts.sources.length) {
-    sourcesHtml = '<div class="search-results"><div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">&#x1F310; Web sources</div>' +
-      opts.sources.map(s => '<div class="search-result-item">&#xB7; <a href="' + escapeHtml(s.url) + '" target="_blank" rel="noopener">' + escapeHtml(s.title || s.url) + '</a></div>').join('') +
-      '</div>';
+    sourcesHtml = '<div class="search-results">' +
+  '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">🌐 Web sources</div>' +
+  opts.sources.map(s =>
+    '<div class="search-result-item"><a href="' + s.url + '" target="_blank">' +
+    s.title + '</a></div>'
+  ).join('') +
+  '</div>';
   }
   row.innerHTML = '<div class="msg-avatar">' + avatar + '</div><div class="msg-bubble">' + formatted + sourcesHtml + '</div>';
   inner.appendChild(row);
